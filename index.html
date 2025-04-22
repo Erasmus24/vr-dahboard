@@ -10,7 +10,8 @@
     <style>
         body { margin: 0; overflow: hidden; }
         #ui-panel { position: absolute; top: 10px; left: 10px; background: rgba(0, 0, 0, 0.7); color: white; padding: 10px; z-index: 10; }
-        button, input { margin: 5px; padding: 5px 10px; }
+        button, input, select { margin: 5px; padding: 5px 10px; }
+        #column-mapping { display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -24,6 +25,19 @@
     </a-scene>
     <div id="ui-panel">
         <input type="file" id="dataUpload" accept=".csv">
+        <div id="column-mapping">
+            <label>Map Columns:</label><br>
+            <select id="month-col">
+                <option value="">Select Month Column</option>
+            </select>
+            <select id="sales-col">
+                <option value="">Select Sales Column</option>
+            </select>
+            <select id="revenue-col">
+                <option value="">Select Revenue Column</option>
+            </select>
+            <button onclick="applyColumnMapping()">Apply Mapping</button>
+        </div>
         <button onclick="renderChart('bar')">Bar Chart</button>
         <button onclick="renderChart('scatter')">Scatter Plot</button>
         <button onclick="runML()">Run Machine Learning</button>
@@ -37,25 +51,76 @@
             { month: "Apr", sales: 1400, revenue: 28000 },
             { month: "May", sales: 2000, revenue: 40000 }
         ];
+        let csvData = [];
+        let csvHeaders = [];
 
+        // Handle CSV upload
         document.getElementById('dataUpload').addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (file) {
                 Papa.parse(file, {
                     header: true,
+                    skipEmptyLines: true,
                     complete: (result) => {
-                        dataset = result.data.map(row => ({
-                            month: row.month || row.Month || row.year || row.Year || '',
-                            sales: parseFloat(row.sales || row.Sales || row.gdp || row.GDP || 0),
-                            revenue: parseFloat(row.revenue || row.Revenue || row.trade || row.Trade || 0)
-                        })).filter(row => row.month && row.sales && row.revenue);
-                        console.log("Dataset updated:", dataset);
-                        renderChart('bar');
+                        csvData = result.data;
+                        csvHeaders = result.meta.fields;
+                        console.log("CSV headers:", csvHeaders);
+                        console.log("CSV data:", csvData);
+
+                        // Populate column selectors
+                        const monthSelect = document.getElementById('month-col');
+                        const salesSelect = document.getElementById('sales-col');
+                        const revenueSelect = document.getElementById('revenue-col');
+                        monthSelect.innerHTML = '<option value="">Select Month Column</option>';
+                        salesSelect.innerHTML = '<option value="">Select Sales Column</option>';
+                        revenueSelect.innerHTML = '<option value="">Select Revenue Column</option>';
+                        csvHeaders.forEach(header => {
+                            const option = document.createElement('option');
+                            option.value = header;
+                            option.text = header;
+                            monthSelect.appendChild(option.cloneNode(true));
+                            salesSelect.appendChild(option.cloneNode(true));
+                            revenueSelect.appendChild(option.cloneNode(true));
+                        });
+
+                        // Show column mapping UI
+                        document.getElementById('column-mapping').style.display = 'block';
                     },
-                    error: (error) => console.error("CSV parse error:", error)
+                    error: (error) => {
+                        console.error("CSV parse error:", error);
+                        alert("Error parsing CSV. Check file format and try again.");
+                    }
                 });
             }
         });
+
+        // Apply column mapping
+        function applyColumnMapping() {
+            const monthCol = document.getElementById('month-col').value;
+            const salesCol = document.getElementById('sales-col').value;
+            const revenueCol = document.getElementById('revenue-col').value;
+
+            if (!monthCol || !salesCol || !revenueCol) {
+                alert("Please select all column mappings.");
+                return;
+            }
+
+            dataset = csvData.map(row => ({
+                month: row[monthCol] || '',
+                sales: parseFloat(row[salesCol]) || 0,
+                revenue: parseFloat(row[revenueCol]) || 0
+            })).filter(row => row.month && !isNaN(row.sales) && !isNaN(row.revenue));
+
+            console.log("Mapped dataset:", dataset);
+
+            if (dataset.length === 0) {
+                alert("No valid data after mapping. Ensure columns contain valid values.");
+                return;
+            }
+
+            document.getElementById('column-mapping').style.display = 'none';
+            renderChart('bar');
+        }
 
         function renderChart(type) {
             console.log(`Button clicked: Rendering ${type} chart`);
@@ -123,12 +188,12 @@
             model.compile({ optimizer: 'sgd', loss: 'meanSquaredError' });
 
             const xsTensor = tf.tensor2d(xs, [xs.length, 1]);
-            const ysTensor = tf.tensor2d(ys, [ys.length, 1]);
+            const ysTensor = tf.tensor2d(ys, [xs.length, 1]);
 
             await model.fit(xsTensor, ysTensor, { epochs: 100 });
 
             const predictions = model.predict(tf.tensor2d(xs, [xs.length, 1])).dataSync();
-
+            
             const chartEntity = document.getElementById('chart');
             const maxItems = Math.min(dataset.length, 20);
             const spacing = maxItems > 1 ? 0.5 : 0;
