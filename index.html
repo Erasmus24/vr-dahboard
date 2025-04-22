@@ -45,10 +45,10 @@
     <script>
         console.log("Script loaded");
         let dataset = [
-            { month: "Jan", sales: 1200, revenue: 24000 },
-            { month: "Feb", sales: 1500, revenue: 30000 },
-            { month: "Mar", sales: 1800, revenue: 36000 },
-            { month: "Apr", sales: 1400, revenue: 28000 },
+            { month: "January", sales: 1200, revenue: 24000 },
+            { month: "February", sales: 1500, revenue: 30000 },
+            { month: "March", sales: 1800, revenue: 36000 },
+            { month: "April", sales: 1400, revenue: 28000 },
             { month: "May", sales: 2000, revenue: 40000 }
         ];
         let csvData = [];
@@ -65,7 +65,7 @@
                         csvData = result.data;
                         csvHeaders = result.meta.fields;
                         console.log("CSV headers:", csvHeaders);
-                        console.log("CSV data:", csvData);
+                        console.log("CSV data sample:", csvData.slice(0, 2));
 
                         // Populate column selectors
                         const monthSelect = document.getElementById('month-col');
@@ -83,7 +83,6 @@
                             revenueSelect.appendChild(option.cloneNode(true));
                         });
 
-                        // Show column mapping UI
                         document.getElementById('column-mapping').style.display = 'block';
                     },
                     error: (error) => {
@@ -106,15 +105,15 @@
             }
 
             dataset = csvData.map(row => ({
-                month: row[monthCol] || '',
+                month: row[monthCol]?.toString() || '',
                 sales: parseFloat(row[salesCol]) || 0,
                 revenue: parseFloat(row[revenueCol]) || 0
-            })).filter(row => row.month && !isNaN(row.sales) && !isNaN(row.revenue));
+            })).filter(row => row.month && !isNaN(row.sales) && !isNaN(row.revenue) && row.sales !== 0);
 
             console.log("Mapped dataset:", dataset);
 
             if (dataset.length === 0) {
-                alert("No valid data after mapping. Ensure columns contain valid values.");
+                alert("No valid data after mapping. Ensure columns contain non-zero numeric values.");
                 return;
             }
 
@@ -137,7 +136,7 @@
             if (type === 'bar') {
                 dataset.slice(0, maxItems).forEach((data, index) => {
                     const bar = document.createElement('a-box');
-                    const height = Math.max(data.sales / 500, 0.1); // Prevent zero height
+                    const height = Math.max(data.sales / 500, 0.1);
                     bar.setAttribute('position', `${index * spacing - offset} ${height / 2} 0`);
                     bar.setAttribute('width', '0.4');
                     bar.setAttribute('height', height);
@@ -147,9 +146,11 @@
 
                     const label = document.createElement('a-text');
                     label.setAttribute('value', data.month);
-                    label.setAttribute('position', `${index * spacing - offset} -0.2 0`);
                     label.setAttribute('align', 'center');
                     label.setAttribute('color', 'white');
+                    label.setAttribute('width', '3.2'); // Larger text size
+                    label.setAttribute('rotation', '0 0 90'); // All labels vertical
+                    label.setAttribute('position', `${index * spacing - offset} -0.3 0`);
                     chartGroup.appendChild(label);
                 });
             } else if (type === 'scatter') {
@@ -165,9 +166,11 @@
 
                     const label = document.createElement('a-text');
                     label.setAttribute('value', data.month);
-                    label.setAttribute('position', `${x} ${y - 0.2} ${z}`);
                     label.setAttribute('align', 'center');
                     label.setAttribute('color', 'white');
+                    label.setAttribute('width', '2.2'); // Larger text size
+                    label.setAttribute('rotation', '0 0 90'); // All labels vertical
+                    label.setAttribute('position', `${x} ${y - 0.3} ${z}`);
                     chartGroup.appendChild(label);
                 });
             }
@@ -175,34 +178,71 @@
 
         async function runML() {
             console.log("Button clicked: Running ML");
+            if (!window.tf) {
+                console.error("TensorFlow.js not loaded");
+                alert("Error: TensorFlow.js failed to load. Check your internet connection.");
+                return;
+            }
+
             if (dataset.length < 2) {
-                alert("Insufficient data for ML. Upload a dataset with at least 2 rows.");
+                console.log("Dataset too small:", dataset.length);
+                alert("Insufficient data for ML. Dataset must have at least 2 rows with valid sales values.");
                 return;
             }
 
             const xs = dataset.map((_, i) => i);
             const ys = dataset.map(d => d.sales);
 
-            const model = tf.sequential();
-            model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
-            model.compile({ optimizer: 'sgd', loss: 'meanSquaredError' });
+            if (ys.some(y => isNaN(y) || y === 0)) {
+                console.log("Invalid sales values:", ys);
+                alert("Invalid sales data. Ensure all sales values are non-zero numbers.");
+                return;
+            }
 
-            const xsTensor = tf.tensor2d(xs, [xs.length, 1]);
-            const ysTensor = tf.tensor2d(ys, [xs.length, 1]);
+            try {
+                console.log("Training model with xs:", xs, "ys:", ys);
+                const model = tf.sequential();
+                model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
+                model.compile({ optimizer: 'sgd', loss: 'meanSquaredError' });
 
-            await model.fit(xsTensor, ysTensor, { epochs: 100 });
+                const xsTensor = tf.tensor2d(xs, [xs.length, 1]);
+                const ysTensor = tf.tensor2d(ys, [ys.length, 1]);
 
-            const predictions = model.predict(tf.tensor2d(xs, [xs.length, 1])).dataSync();
-            
-            const chartEntity = document.getElementById('chart');
-            const maxItems = Math.min(dataset.length, 20);
-            const spacing = maxItems > 1 ? 0.5 : 0;
-            const offset = (maxItems - 1) * spacing / 2;
-            const line = document.createElement('a-entity');
-            line.setAttribute('line', `start: -${offset} ${predictions[0] / 500} 0; end: ${offset} ${predictions[predictions.length - 1] / 500} 0; color: red`);
-            chartEntity.appendChild(line);
+                await model.fit(xsTensor, ysTensor, {
+                    epochs: 100,
+                    verbose: 0,
+                    callbacks: {
+                        onEpochEnd: (epoch, logs) => {
+                            if (epoch % 20 === 0) {
+                                console.log(`Epoch ${epoch}: loss = ${logs.loss}`);
+                            }
+                        }
+                    }
+                });
 
-            alert('Linear regression applied! Red line shows predicted sales trend.');
+                const predictions = model.predict(tf.tensor2d(xs, [xs.length, 1])).dataSync();
+                console.log("Predictions:", predictions);
+
+                // Dynamic scaling for trend line
+                const minY = Math.min(...ys, ...predictions);
+                const maxY = Math.max(...ys, ...predictions);
+                const scaleY = maxY > minY ? 500 / (maxY - minY) : 500 / maxY;
+                const scaledPredictions = predictions.map(p => (p - minY) * scaleY || 0.1);
+
+                const chartEntity = document.getElementById('chart');
+                const maxItems = Math.min(dataset.length, 20);
+                const spacing = maxItems > 1 ? 0.5 : 0;
+                const offset = (maxItems - 1) * spacing / 2;
+
+                const line = document.createElement('a-entity');
+                line.setAttribute('line', `start: -${offset} ${scaledPredictions[0]} 0; end: ${offset} ${scaledPredictions[scaledPredictions.length - 1]} 0; color: red`);
+                chartEntity.appendChild(line);
+
+                alert('Linear regression applied! Red line shows predicted sales trend.');
+            } catch (error) {
+                console.error("ML error:", error);
+                alert("Error running machine learning. Check console for details.");
+            }
         }
 
         renderChart('bar');
