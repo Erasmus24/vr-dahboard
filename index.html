@@ -71,9 +71,9 @@
                         const monthSelect = document.getElementById('month-col');
                         const salesSelect = document.getElementById('sales-col');
                         const revenueSelect = document.getElementById('revenue-col');
-                        monthSelect.innerHTML = '<option value="">Select Month Column</option>';
-                        salesSelect.innerHTML = '<option value="">Select Sales Column</option>';
-                        revenueSelect.innerHTML = '<option value="">Select Revenue Column</option>';
+                        monthSelect.innerHTML = '<option value="">Select X-axis</option>';
+                        salesSelect.innerHTML = '<option value="">Select Y-axis</option>';
+                        revenueSelect.innerHTML = '<option value="">Select Z-axis</option>';
                         csvHeaders.forEach(header => {
                             const option = document.createElement('option');
                             option.value = header;
